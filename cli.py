@@ -8,12 +8,13 @@ Commands:
   dashboard - Scan + open browser + start dashboard server
 """
 
+import os
 import sys
 import sqlite3
 from pathlib import Path
 from datetime import datetime, date
 
-DB_PATH = Path.home() / ".claude" / "usage.db"
+DB_PATH = Path(os.environ.get("USAGE_DB_PATH", str(Path.home() / ".claude" / "usage.db")))
 
 PRICING = {
     "claude-opus-4-6":   {"input": 15.00, "output": 75.00},
@@ -248,20 +249,27 @@ def cmd_dashboard():
     import webbrowser
     import threading
     import time
+    import dashboard
 
-    print("Running scan first...")
-    cmd_scan()
+    def run_scan():
+        try:
+            print("Scanning usage logs...")
+            cmd_scan()
+        except Exception as e:
+            print(f"Scan failed: {e}")
+        dashboard._scan_complete = True
+        print("Scan complete — dashboard ready.")
 
-    print("\nStarting dashboard server...")
-    from dashboard import serve
+    threading.Thread(target=run_scan, daemon=True).start()
 
     def open_browser():
         time.sleep(1.0)
         webbrowser.open("http://localhost:8080")
 
-    t = threading.Thread(target=open_browser, daemon=True)
-    t.start()
-    serve(port=8080)
+    threading.Thread(target=open_browser, daemon=True).start()
+
+    print("Starting dashboard server...")
+    dashboard.serve(port=8080)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

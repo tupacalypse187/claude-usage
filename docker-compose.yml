@@ -1,0 +1,9 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - USAGE_DB_PATH=/app/usage.db
+    volumes:
+      - ${HOME}/.claude:/root/.claude:ro

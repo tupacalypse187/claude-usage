@@ -3,12 +3,13 @@ dashboard.py - Local web dashboard served on localhost:8080.
 """
 
 import json
+import os
 import sqlite3
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path.home() / ".claude" / "usage.db"
+DB_PATH = Path(os.environ.get("USAGE_DB_PATH", str(Path.home() / ".claude" / "usage.db")))
 
 
 def get_dashboard_data(db_path=DB_PATH):
@@ -233,7 +234,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <footer>
   <div class="footer-content">
-    <p>Cost estimates based on Anthropic API pricing (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) as of April 2026. Only models containing <em>opus</em>, <em>sonnet</em>, or <em>haiku</em> in the name are included in cost calculations. Actual costs for Max/Pro subscribers differ from API pricing.</p>
+    <p>Cost estimates based on Anthropic API pricing (<a href="https://claude.com/pricing#api" target="_blank">claude.com/pricing#api</a>) as of April 2026 with a 0.45x Max plan discount applied. Only models containing <em>opus</em>, <em>sonnet</em>, or <em>haiku</em> in the name are included in cost calculations.</p>
     <p>
       GitHub: <a href="https://github.com/phuryn/claude-usage" target="_blank">https://github.com/phuryn/claude-usage</a>
       &nbsp;&middot;&nbsp;
@@ -251,7 +252,8 @@ let selectedModels = new Set();
 let selectedRange = '30d';
 let charts = {};
 
-// ── Pricing (Anthropic API, April 2026) ────────────────────────────────────
+// ── Pricing (Anthropic API, April 2026 · 0.45x Max plan discount) ─────────
+const COST_DISCOUNT = 0.45;
 const PRICING = {
   'claude-opus-4-6':   { input: 6.15,  output: 30.75, cache_write: 7.69, cache_read: 0.61 },
   'claude-opus-4-5':   { input: 6.15,  output: 30.75, cache_write: 7.69, cache_read: 0.61 },
@@ -289,7 +291,7 @@ function calcCost(model, inp, out, cacheRead, cacheCreation) {
     out           * p.output      / 1e6 +
     cacheRead     * p.cache_read  / 1e6 +
     cacheCreation * p.cache_write / 1e6
-  );
+  ) * COST_DISCOUNT;
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────
@@ -496,7 +498,7 @@ function renderStats(t) {
     { label: 'Output Tokens',  value: fmt(t.output),               sub: rangeLabel },
     { label: 'Cache Read',     value: fmt(t.cache_read),           sub: 'from prompt cache' },
     { label: 'Cache Creation', value: fmt(t.cache_creation),       sub: 'writes to prompt cache' },
-    { label: 'Est. Cost',      value: fmtCostBig(t.cost),          sub: 'API pricing, Apr 2026', color: '#4ade80' },
+    { label: 'Est. Cost',      value: fmtCostBig(t.cost),          sub: 'Max plan (0.45x API)', color: '#4ade80' },
   ];
   document.getElementById('stats-row').innerHTML = stats.map(s => `
     <div class="stat-card">
@@ -653,18 +655,66 @@ setInterval(loadData, 30000);
 """
 
 
+_scan_complete = False
+
+
+LOADING_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Loading Dashboard...</title>
+<style>
+  body { background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+  .loader { text-align: center; }
+  .loader h1 { font-size: 20px; color: #d97757; margin-bottom: 12px; }
+  .loader p { color: #8892a4; font-size: 14px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #2a2d3a; border-top-color: #d97757; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="loader">
+  <div class="spinner"></div>
+  <h1>Claude Code Usage Dashboard</h1>
+  <p>Scanning usage logs... This page will auto-refresh when ready.</p>
+</div>
+<script>setInterval(async()=>{try{const r=await fetch('/api/ready');if(r.ok){const d=await r.json();if(d.ready)location.reload()}}catch(e){}},2000);</script>
+</body>
+</html>
+"""
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def _parse_path(self):
+        return self.path.split("?")[0]
+
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
+        path = self._parse_path()
+
+        if path in ("/", "/index.html"):
+            if not _scan_complete:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(LOADING_PAGE.encode("utf-8"))
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
 
-        elif self.path == "/api/data":
+        elif path == "/api/ready":
+            body = json.dumps({"ready": _scan_complete}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        elif path == "/api/data":
             data = get_dashboard_data()
             body = json.dumps(data).encode("utf-8")
             self.send_response(200)
@@ -678,8 +728,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 
-def serve(port=8080):
-    server = HTTPServer(("localhost", port), DashboardHandler)
+def serve(port=8080, host="0.0.0.0"):
+    server = HTTPServer((host, port), DashboardHandler)
     print(f"Dashboard running at http://localhost:{port}")
     print("Press Ctrl+C to stop.")
     try:

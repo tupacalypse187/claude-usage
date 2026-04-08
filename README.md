@@ -27,16 +27,72 @@ Captures usage from:
 
 ---
 
-## Requirements
+## 🚀 Quick Start (Docker)
+
+The recommended way to run the dashboard. No Python setup needed — your `~/.claude` directory is mounted **read-only** so nothing on your host is modified.
+
+### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
+
+### 🔨 Build & Run
+
+```bash
+git clone https://github.com/phuryn/claude-usage
+cd claude-usage
+docker compose up --build -d
+```
+
+Then open 👉 **http://localhost:8080**
+
+> 💡 A loading page appears while usage logs are being scanned. It auto-refreshes when the dashboard is ready.
+
+### 📋 Common Commands
+
+```bash
+# 🔨 Build and start (detached)
+docker compose up --build -d
+
+# 📺 View logs
+docker compose logs -f
+
+# 🛑 Stop the dashboard
+docker compose down
+
+# 🧹 Stop and remove the image (clean rebuild)
+docker compose down --rmi all
+```
+
+### 🔗 URL Examples
+
+```
+http://localhost:8080              # Default (last 30 days)
+http://localhost:8080/?range=7d    # Last 7 days
+http://localhost:8080/?range=90d   # Last 90 days
+http://localhost:8080/?range=all   # All time
+```
+
+### ⚙️ Docker Details
+
+| Component | Detail |
+|-----------|--------|
+| 📁 Volume mount | `~/.claude` → `/root/.claude` (read-only) |
+| 🗄️ Database | Written to `/app/usage.db` inside the container |
+| 🌐 Port | `8080` on host → `8080` in container |
+| 🔄 Auto-refresh | Dashboard polls for new data every 30 seconds |
+
+---
+
+## 🐍 Alternative: Run with Python
+
+If you prefer to run without Docker. No `pip install`, no virtual environment, no build step.
+
+### Requirements
 
 - Python 3.8+
 - No third-party packages — uses only the standard library (`sqlite3`, `http.server`, `json`, `pathlib`)
 
 > Anyone running Claude Code already has Python installed.
-
-## Quick Start
-
-No `pip install`, no virtual environment, no build step.
 
 ### Windows
 ```
@@ -52,13 +108,11 @@ cd claude-usage
 python3 cli.py dashboard
 ```
 
----
-
-## Usage
+### CLI Commands
 
 > On macOS/Linux, use `python3` instead of `python` in all commands below.
 
-```
+```bash
 # Scan JSONL files and populate the database (~/.claude/usage.db)
 python cli.py scan
 
@@ -91,7 +145,7 @@ Claude Code writes one JSONL file per session to `~/.claude/projects/`. Each lin
 
 ---
 
-## Cost estimates
+## 💰 Cost estimates & discount
 
 Costs are calculated using **Anthropic API pricing as of April 2026** ([claude.com/pricing#api](https://claude.com/pricing#api)).
 
@@ -103,7 +157,24 @@ Costs are calculated using **Anthropic API pricing as of April 2026** ([claude.c
 | claude-sonnet-4-6 | $3.69/MTok | $18.45/MTok | $4.61/MTok | $0.37/MTok |
 | claude-haiku-4-5 | $1.23/MTok | $6.15/MTok | $1.54/MTok | $0.12/MTok |
 
-> **Note:** These are API prices. If you use Claude Code via a Max or Pro subscription, your actual cost structure is different (subscription-based, not per-token).
+### 🏷️ Max/Pro plan discount
+
+If you use Claude Code via a **Max or Pro subscription**, you pay less than API list pricing. The dashboard applies a **discount multiplier** (`COST_DISCOUNT`) to all cost estimates so they approximate your actual bill.
+
+The default is `0.45` (i.e., 45% of API price), calibrated against real Max plan billing. To adjust it for your plan:
+
+1. Open `dashboard.py`
+2. Find the `COST_DISCOUNT` constant near the top of the `<script>` section:
+   ```javascript
+   const COST_DISCOUNT = 0.45;
+   ```
+3. Change the value:
+   - **`1.0`** — full API pricing (no discount)
+   - **`0.45`** — ~55% off API pricing (Max plan estimate)
+   - Any value between `0` and `1` — adjust to match your actual billing
+4. Rebuild if using Docker: `docker compose up --build -d`
+
+> **💡 Tip:** To calculate your own discount, compare the dashboard's "All Time" or monthly cost (with `COST_DISCOUNT = 1.0`) against your actual Anthropic bill for the same period. Divide your real bill by the dashboard total to get your multiplier.
 
 ---
 
@@ -114,3 +185,5 @@ Costs are calculated using **Anthropic API pricing as of April 2026** ([claude.c
 | `scanner.py` | Parses JSONL transcripts, writes to `~/.claude/usage.db` |
 | `dashboard.py` | HTTP server + single-page HTML/JS dashboard |
 | `cli.py` | `scan`, `today`, `stats`, `dashboard` commands |
+| `Dockerfile` | Container image definition |
+| `docker-compose.yml` | Docker Compose config with read-only volume mount |
