@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
-DB_PATH = Path.home() / ".claude" / "usage.db"
+DB_PATH = Path(os.environ.get("USAGE_DB_PATH", str(Path.home() / ".claude" / "usage.db")))
 
 
 def get_db(db_path=DB_PATH):
@@ -271,9 +271,11 @@ def scan(projects_dir=PROJECTS_DIR, db_path=DB_PATH, verbose=True):
         except OSError:
             continue
 
+        rel_path = os.path.relpath(filepath, projects_dir)
+
         row = conn.execute(
             "SELECT mtime, lines FROM processed_files WHERE path = ?",
-            (filepath,)
+            (rel_path,)
         ).fetchone()
 
         if row and abs(row["mtime"] - mtime) < 0.01:
@@ -301,7 +303,7 @@ def scan(projects_dir=PROJECTS_DIR, db_path=DB_PATH, verbose=True):
 
                 if current_lines <= old_lines:
                     conn.execute("UPDATE processed_files SET mtime = ? WHERE path = ?",
-                                 (mtime, filepath))
+                                 (mtime, rel_path))
                     conn.commit()
                     skipped_files += 1
                     continue
@@ -391,7 +393,7 @@ def scan(projects_dir=PROJECTS_DIR, db_path=DB_PATH, verbose=True):
         conn.execute("""
             INSERT OR REPLACE INTO processed_files (path, mtime, lines)
             VALUES (?, ?, ?)
-        """, (filepath, mtime, line_count))
+        """, (rel_path, mtime, line_count))
         conn.commit()
 
     if verbose:
