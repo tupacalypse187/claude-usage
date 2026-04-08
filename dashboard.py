@@ -131,8 +131,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .filter-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap; }
   .filter-btn:hover { border-color: var(--accent); color: var(--text); }
   .range-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
-  .range-btn { padding: 4px 13px; background: transparent; border: none; border-right: 1px solid var(--border); color: var(--muted); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+  .range-btn { padding: 4px 13px; background: transparent; border: none; border-right: 1px solid var(--border); color: var(--muted); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap; }
   .range-btn:last-child { border-right: none; }
+  .date-input { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 12px; padding: 3px 8px; font-family: inherit; }
+  .date-input::-webkit-calendar-picker-indicator { filter: invert(0.7); }
   .range-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
   .range-btn.active { background: rgba(217,119,87,0.15); color: var(--accent); font-weight: 600; }
 
@@ -190,8 +192,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="range-btn" data-range="7d"  onclick="setRange('7d')">7d</button>
     <button class="range-btn" data-range="30d" onclick="setRange('30d')">30d</button>
     <button class="range-btn" data-range="90d" onclick="setRange('90d')">90d</button>
+    <button class="range-btn" data-range="mtd" onclick="setRange('mtd')">MTD</button>
     <button class="range-btn" data-range="all" onclick="setRange('all')">All</button>
   </div>
+  <div class="filter-sep"></div>
+  <div class="filter-label">Custom</div>
+  <input type="date" id="date-from" class="date-input" onchange="setCustomRange()">
+  <span style="color:var(--muted);font-size:12px">to</span>
+  <input type="date" id="date-to" class="date-input" onchange="setCustomRange()">
 </div>
 
 <div class="container">
@@ -314,27 +322,57 @@ const TOKEN_COLORS = {
 const MODEL_COLORS = ['#d97757','#4f8ef7','#4ade80','#a78bfa','#fbbf24','#f472b6','#34d399','#60a5fa'];
 
 // ── Time range ─────────────────────────────────────────────────────────────
-const RANGE_LABELS = { '7d': 'Last 7 Days', '30d': 'Last 30 Days', '90d': 'Last 90 Days', 'all': 'All Time' };
-const RANGE_TICKS  = { '7d': 7, '30d': 15, '90d': 13, 'all': 12 };
+const RANGE_LABELS = { '7d': 'Last 7 Days', '30d': 'Last 30 Days', '90d': 'Last 90 Days', 'mtd': 'Month to Date', 'all': 'All Time', 'custom': 'Custom Range' };
+const RANGE_TICKS  = { '7d': 7, '30d': 15, '90d': 13, 'mtd': 15, 'all': 12, 'custom': 15 };
+let customFrom = '';
+let customTo = '';
 
 function getRangeCutoff(range) {
-  if (range === 'all') return null;
+  if (range === 'all') return { start: null, end: null };
+  if (range === 'custom') return { start: customFrom || null, end: customTo || null };
+  if (range === 'mtd') {
+    const now = new Date();
+    const start = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+    return { start, end: null };
+  }
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return { start: d.toISOString().slice(0, 10), end: null };
 }
 
 function readURLRange() {
-  const p = new URLSearchParams(window.location.search).get('range');
-  return ['7d', '30d', '90d', 'all'].includes(p) ? p : '30d';
+  const params = new URLSearchParams(window.location.search);
+  const p = params.get('range');
+  if (p === 'custom') {
+    customFrom = params.get('from') || '';
+    customTo = params.get('to') || '';
+    return 'custom';
+  }
+  return ['7d', '30d', '90d', 'mtd', 'all'].includes(p) ? p : '30d';
 }
 
 function setRange(range) {
   selectedRange = range;
+  if (range !== 'custom') {
+    customFrom = '';
+    customTo = '';
+    document.getElementById('date-from').value = '';
+    document.getElementById('date-to').value = '';
+  }
   document.querySelectorAll('.range-btn').forEach(btn =>
     btn.classList.toggle('active', btn.dataset.range === range)
   );
+  updateURL();
+  applyFilter();
+}
+
+function setCustomRange() {
+  customFrom = document.getElementById('date-from').value;
+  customTo = document.getElementById('date-to').value;
+  if (!customFrom && !customTo) return;
+  selectedRange = 'custom';
+  document.querySelectorAll('.range-btn').forEach(btn => btn.classList.remove('active'));
   updateURL();
   applyFilter();
 }
@@ -404,6 +442,10 @@ function updateURL() {
   const allModels = Array.from(document.querySelectorAll('#model-checkboxes input')).map(cb => cb.value);
   const params = new URLSearchParams();
   if (selectedRange !== '30d') params.set('range', selectedRange);
+  if (selectedRange === 'custom') {
+    if (customFrom) params.set('from', customFrom);
+    if (customTo) params.set('to', customTo);
+  }
   if (!isDefaultModelSelection(allModels)) params.set('models', Array.from(selectedModels).join(','));
   const search = params.toString() ? '?' + params.toString() : '';
   history.replaceState(null, '', window.location.pathname + search);
@@ -413,11 +455,11 @@ function updateURL() {
 function applyFilter() {
   if (!rawData) return;
 
-  const cutoff = getRangeCutoff(selectedRange);
+  const { start: cutoffStart, end: cutoffEnd } = getRangeCutoff(selectedRange);
 
   // Filter daily rows by model + date range
   const filteredDaily = rawData.daily_by_model.filter(r =>
-    selectedModels.has(r.model) && (!cutoff || r.day >= cutoff)
+    selectedModels.has(r.model) && (!cutoffStart || r.day >= cutoffStart) && (!cutoffEnd || r.day <= cutoffEnd)
   );
 
   // Daily chart: aggregate by day
@@ -446,7 +488,7 @@ function applyFilter() {
 
   // Filter sessions by model + date range
   const filteredSessions = rawData.sessions_all.filter(s =>
-    selectedModels.has(s.model) && (!cutoff || s.last_date >= cutoff)
+    selectedModels.has(s.model) && (!cutoffStart || s.last_date >= cutoffStart) && (!cutoffEnd || s.last_date <= cutoffEnd)
   );
 
   // Add session counts into modelMap
@@ -478,7 +520,14 @@ function applyFilter() {
   };
 
   // Update daily chart title
-  document.getElementById('daily-chart-title').textContent = 'Daily Token Usage \u2014 ' + RANGE_LABELS[selectedRange];
+  let rangeTitle = RANGE_LABELS[selectedRange];
+  if (selectedRange === 'custom') {
+    const parts = [];
+    if (customFrom) parts.push(customFrom);
+    if (customTo) parts.push(customTo);
+    rangeTitle = parts.length ? parts.join(' to ') : 'Custom Range';
+  }
+  document.getElementById('daily-chart-title').textContent = 'Daily Token Usage \u2014 ' + rangeTitle;
 
   renderStats(totals);
   renderDailyChart(daily);
@@ -637,6 +686,11 @@ async function loadData() {
       document.querySelectorAll('.range-btn').forEach(btn =>
         btn.classList.toggle('active', btn.dataset.range === selectedRange)
       );
+      // Restore custom date inputs from URL
+      if (selectedRange === 'custom') {
+        document.getElementById('date-from').value = customFrom;
+        document.getElementById('date-to').value = customTo;
+      }
       // Build model filter (reads URL for model selection too)
       buildFilterUI(d.all_models);
     }

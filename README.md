@@ -66,10 +66,12 @@ docker compose down --rmi all
 ### 🔗 URL Examples
 
 ```
-http://localhost:8080              # Default (last 30 days)
-http://localhost:8080/?range=7d    # Last 7 days
-http://localhost:8080/?range=90d   # Last 90 days
-http://localhost:8080/?range=all   # All time
+http://localhost:8080                                             # Default (last 30 days)
+http://localhost:8080/?range=7d                                   # Last 7 days
+http://localhost:8080/?range=mtd                                  # Month to date
+http://localhost:8080/?range=90d                                  # Last 90 days
+http://localhost:8080/?range=all                                  # All time
+http://localhost:8080/?range=custom&from=2026-03-01&to=2026-03-31 # Custom date range
 ```
 
 ### ⚙️ Docker Details
