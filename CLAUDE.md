@@ -18,6 +18,7 @@ A zero-dependency Python dashboard that reads Claude Code's local JSONL usage lo
 - **Dashboard server** binds to `0.0.0.0` (not `localhost`) so it works inside Docker containers
 - **Cost discount** — a `COST_DISCOUNT` constant (currently `0.45`) is applied to API pricing to approximate Max plan costs
 - **Loading page** — server starts immediately and shows a loading spinner while the background scan runs; auto-refreshes when ready
+- **Time ranges** — preset buttons (7d, 30d, 90d, MTD, All) plus custom from/to date pickers; all bookmarkable via URL params
 
 ## Docker
 
