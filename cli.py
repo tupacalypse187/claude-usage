@@ -252,8 +252,11 @@ def cmd_dashboard():
     import dashboard
 
     def run_scan():
-        print("Scanning usage logs...")
-        cmd_scan()
+        try:
+            print("Scanning usage logs...")
+            cmd_scan()
+        except Exception as e:
+            print(f"Scan failed: {e}")
         dashboard._scan_complete = True
         print("Scan complete — dashboard ready.")
 

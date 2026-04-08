@@ -273,10 +273,19 @@ def scan(projects_dir=PROJECTS_DIR, db_path=DB_PATH, verbose=True):
 
         rel_path = os.path.relpath(filepath, projects_dir)
 
+        # Look up by relative path first, fall back to absolute for old DBs
         row = conn.execute(
             "SELECT mtime, lines FROM processed_files WHERE path = ?",
             (rel_path,)
         ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT mtime, lines FROM processed_files WHERE path = ?",
+                (filepath,)
+            ).fetchone()
+            if row is not None:
+                # Migrate old absolute-path record to relative
+                conn.execute("DELETE FROM processed_files WHERE path = ?", (filepath,))
 
         if row and abs(row["mtime"] - mtime) < 0.01:
             skipped_files += 1
